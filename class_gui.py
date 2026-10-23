@@ -196,6 +196,82 @@ BROWSERS = [
     ("other", "Other (Search Repositories / AUR)", "Search and install any browser package"),
 ]
 
+# Curated browser extensions list
+BROWSER_EXTENSIONS = [
+    (
+        "return-youtube-dislike",
+        "Return YouTube Dislike",
+        "Restores the dislike count display on YouTube videos",
+        "gebbhagfogifgggkldgodflihgfeippi",
+        "{762f9885-5a13-4abd-9c77-433dcd38b8fd}",
+        "https://addons.mozilla.org/firefox/downloads/latest/return-youtube-dislikes/latest.xpi",
+        True
+    ),
+    (
+        "sponsorblock",
+        "SponsorBlock",
+        "Skip sponsor segments, intros, outros, and subscription reminders on YouTube",
+        "mnjggcdmjocbbbhaepdhchncahnbgone",
+        "sponsorBlocker@ajay.app",
+        "https://addons.mozilla.org/firefox/downloads/latest/sponsorblock/latest.xpi",
+        True
+    ),
+    (
+        "adblock-for-youtube",
+        "Adblock for YouTube",
+        "Removes pre-roll video ads, banners, and popups on YouTube",
+        "cmedhionkhpnakcndndgjdbohmhepckk",
+        "jid1-q4sG8pYhq8KGHs@jetpack",
+        "https://addons.mozilla.org/firefox/downloads/latest/adblock-for-youtube/latest.xpi",
+        True
+    ),
+    (
+        "darkreader",
+        "Dark Reader",
+        "Inverts brightness and applies high-contrast dark themes to every website",
+        "eimadpbcbfnmbkopoojfekhnkhdbieeh",
+        "addon@darkreader.org",
+        "https://addons.mozilla.org/firefox/downloads/latest/darkreader/latest.xpi",
+        True
+    ),
+    (
+        "consent-o-matic",
+        "Consent-O-Matic",
+        "Automatically fills out and rejects GDPR / ePrivacy cookie popups in the background",
+        "mljpablpbeekflopdjnioimmkigebmhi",
+        "gdpr@cavi.au.dk",
+        "https://addons.mozilla.org/firefox/downloads/latest/consent-o-matic/latest.xpi",
+        True
+    ),
+    (
+        "adnauseam",
+        "AdNauseam",
+        "Blocks ads while clicking them in the background to obfuscate your browsing profile",
+        "",
+        "adnauseam@rednoise.org",
+        "https://addons.mozilla.org/firefox/downloads/latest/adnauseam/latest.xpi",
+        True
+    ),
+    (
+        "microsoft-to-microslop",
+        "Microsoft to Microslop",
+        "Replaces every visual occurrence of 'Microsoft' on web pages with 'Microslop'",
+        "hlkljlkdinjnbfmclionhbefbnefcgll",
+        "microsoft-to-microslop@example.com",
+        "https://addons.mozilla.org/firefox/downloads/latest/microsoft-to-microslop/latest.xpi",
+        True
+    ),
+    (
+        "hola-vpn",
+        "Hola VPN",
+        "Website unblocker and proxy extension",
+        "gkojfkhlekighikafcpjkiklfbnlmeio",
+        "",
+        "",
+        True
+    ),
+]
+
 # Flatpak applications section
 FLATPAK_APPS = [
     (
@@ -292,16 +368,18 @@ class CLASSWizardWindow(Gtk.ApplicationWindow):
         self.gpu_display_name, self.detected_gpu_pkgs = detect_gpus()
 
         # State storage
+        self.install_gpu_drivers = False
         self.selected_browser = "brave-origin-bin"
+        self.selected_extensions = {ext_id for ext_id, _, _, _, _, _, default_active in BROWSER_EXTENSIONS if default_active}
         self.selected_apps = set()
         self.selected_flatpaks = {pkg for pkg, _, _, default_active in FLATPAK_APPS if default_active}
         self.selected_scripts = {s_id for s_id, _, _, default_active in SCRIPTS if default_active}
         self.queued_aur = set()
 
         # Step tracking:
-        # 0: Browser (1/4), 1: Apps & Extra AUR (2/4), 2: Flatpaks (3/4), 3: Scripts (4/4), 4: Summary
+        # 0: Drivers (1/6), 1: Browser (2/6), 2: Extensions (3/6), 3: Apps (4/6), 4: Flatpaks (5/6), 5: Scripts (6/6), 6: Summary
         self.current_step = 0
-        self.total_steps = 5
+        self.total_steps = 7
         self.is_installing = False
 
         # Connect window close (titlebar X) to cleanly halt the setup
@@ -376,8 +454,10 @@ class CLASSWizardWindow(Gtk.ApplicationWindow):
         root_box.append(self.stack)
 
         # Build each page:
-        # Browser -> Application Selection (with Extra AUR at bottom) -> Flatpaks -> Scripts -> Summary -> Installation Progress
+        # GPU Drivers -> Browser -> Browser Extensions -> Applications -> Flatpaks -> Scripts -> Summary -> Installation Progress
+        self.build_drivers_page()
         self.build_browser_page()
+        self.build_extensions_page()
         self.build_apps_page()
         self.build_flatpaks_page()
         self.build_scripts_page()
@@ -433,7 +513,46 @@ class CLASSWizardWindow(Gtk.ApplicationWindow):
         self.update_step_view()
 
     # -------------------------------------------------------------
-    # Page 1: Browser Selection
+    # Step 1: Graphics & GPU Drivers
+    # -------------------------------------------------------------
+    def build_drivers_page(self):
+        page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
+        page.set_margin_top(8)
+
+        info = Gtk.Label()
+        info.set_halign(Gtk.Align.START)
+        info.set_markup("<b>Graphics & GPU Driver Configuration (Optional):</b>\n<span size='small' alpha='65%'>GPU drivers are opt-in. Check the box below if you want to install hardware-accelerated drivers and 32-bit Vulkan libraries for your detected graphics hardware.</span>")
+        page.append(info)
+
+        scrolled = Gtk.ScrolledWindow()
+        scrolled.set_vexpand(True)
+
+        content_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        content_box.set_margin_top(8)
+        content_box.set_margin_bottom(8)
+        content_box.set_margin_start(8)
+        content_box.set_margin_end(8)
+
+        pkgs_text = ", ".join(self.detected_gpu_pkgs) if self.detected_gpu_pkgs else "None"
+        desc = f"Detected: {self.gpu_display_name}\nPackages: {pkgs_text}\nInstalls 32-bit & 64-bit Mesa/Vulkan runtimes and hardware acceleration."
+
+        self.chk_gpu_drivers = make_check_button(
+            f"Install GPU Drivers ({self.gpu_display_name})",
+            desc
+        )
+        self.chk_gpu_drivers.set_active(False)  # Opt-in by default
+        self.chk_gpu_drivers.connect("toggled", self.on_gpu_drivers_toggled)
+        content_box.append(self.chk_gpu_drivers)
+
+        scrolled.set_child(content_box)
+        page.append(scrolled)
+        self.stack.add_named(page, "page_drivers")
+
+    def on_gpu_drivers_toggled(self, btn):
+        self.install_gpu_drivers = btn.get_active()
+
+    # -------------------------------------------------------------
+    # Page 2: Browser Selection
     # -------------------------------------------------------------
     def build_browser_page(self):
         page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
@@ -540,7 +659,84 @@ class CLASSWizardWindow(Gtk.ApplicationWindow):
         threading.Thread(target=search_thread, daemon=True).start()
 
     # -------------------------------------------------------------
-    # Page 2: Application Selection (with Extra AUR Search at bottom)
+    # Step 3: Browser Extensions
+    # -------------------------------------------------------------
+    def build_extensions_page(self):
+        page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        page.set_margin_top(8)
+
+        info = Gtk.Label()
+        info.set_halign(Gtk.Align.START)
+        info.set_markup("<b>Select curated browser extensions to provision:</b>\n<span size='small' alpha='65%'>Automatically pre-configured for your chosen browser (Brave, Chromium, Firefox, etc.). Extensions will be ready when you launch the browser.</span>")
+        page.append(info)
+
+        # Top bar with Master Select All / Unselect All
+        top_bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=20)
+        top_bar.set_margin_top(6)
+        top_bar.set_margin_bottom(8)
+
+        self.extensions_master_select_all = make_check_button("Select / Unselect All Extensions")
+        self.extensions_master_select_all.set_active(True)
+        self.extensions_master_select_all.connect("toggled", self.on_master_extensions_toggled)
+        top_bar.append(self.extensions_master_select_all)
+        page.append(top_bar)
+
+        scrolled = Gtk.ScrolledWindow()
+        scrolled.set_vexpand(True)
+
+        grid = Gtk.Grid()
+        grid.set_column_spacing(24)
+        grid.set_row_spacing(12)
+        grid.set_margin_top(8)
+        grid.set_margin_bottom(12)
+        grid.set_margin_start(8)
+        grid.set_margin_end(8)
+
+        self.extensions_checkboxes = {}
+        self.ext_selection_updating = False
+
+        half = (len(BROWSER_EXTENSIONS) + 1) // 2
+        for idx, (ext_id, name, desc, _, _, _, default_active) in enumerate(BROWSER_EXTENSIONS):
+            c = make_check_button(name, desc)
+            c.set_active(default_active)
+            c.connect("toggled", lambda b, e=ext_id: self.on_extension_toggled(b, e))
+            self.extensions_checkboxes[ext_id] = c
+
+            col = 0 if idx < half else 1
+            row = idx if idx < half else idx - half
+            grid.attach(c, col, row, 1, 1)
+
+        scrolled.set_child(grid)
+        page.append(scrolled)
+        self.stack.add_named(page, "page_extensions")
+
+    def on_master_extensions_toggled(self, btn):
+        if getattr(self, "ext_selection_updating", False):
+            return
+        self.ext_selection_updating = True
+        active = btn.get_active()
+        for ext_id, chk in self.extensions_checkboxes.items():
+            chk.set_active(active)
+            if active:
+                self.selected_extensions.add(ext_id)
+            else:
+                self.selected_extensions.discard(ext_id)
+        self.ext_selection_updating = False
+
+    def on_extension_toggled(self, btn, ext_id):
+        if btn.get_active():
+            self.selected_extensions.add(ext_id)
+        else:
+            self.selected_extensions.discard(ext_id)
+
+        if not getattr(self, "ext_selection_updating", False):
+            self.ext_selection_updating = True
+            all_active = all(chk.get_active() for chk in self.extensions_checkboxes.values())
+            self.extensions_master_select_all.set_active(all_active)
+            self.ext_selection_updating = False
+
+    # -------------------------------------------------------------
+    # Page 4: Application Selection (with Extra AUR Search at bottom)
     # -------------------------------------------------------------
     def build_apps_page(self):
         page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
@@ -1024,10 +1220,17 @@ class CLASSWizardWindow(Gtk.ApplicationWindow):
             self.summary_content_box.append(card)
 
         # GPU summary (Auto-detected hardware)
-        add_card("GPU Drivers (Auto-Detected)", f"{self.gpu_display_name}\n   Driver packages: {', '.join(self.detected_gpu_pkgs)}")
+        if self.install_gpu_drivers and self.detected_gpu_pkgs:
+            add_card("GPU Drivers (Opted In)", f"{self.gpu_display_name}\n   Driver packages: {', '.join(self.detected_gpu_pkgs)}")
+        else:
+            add_card("GPU Drivers", f"{self.gpu_display_name}\n   Status: Skipped (Not opted in)")
 
         # Browser summary
         add_card("Web Browser", self.selected_browser if self.selected_browser else "Skipped")
+
+        # Browser Extensions summary
+        ext_names = [name for ext_id, name, _, _, _, _, _ in BROWSER_EXTENSIONS if ext_id in self.selected_extensions]
+        add_card(f"Browser Extensions ({len(self.selected_extensions)})", ext_names)
 
         # Applications vs Emulators breakdown
         selected_main = sorted([pkg for pkg in self.selected_apps if pkg not in EMULATOR_PKGS_SET])
@@ -1160,6 +1363,9 @@ class CLASSWizardWindow(Gtk.ApplicationWindow):
     # -------------------------------------------------------------
     def save_current_step_state(self):
         if self.current_step == 0:
+            self.install_gpu_drivers = self.chk_gpu_drivers.get_active()
+
+        elif self.current_step == 1:
             for bid, r in self.browser_radios.items():
                 if r.get_active():
                     if bid == "other":
@@ -1176,34 +1382,41 @@ class CLASSWizardWindow(Gtk.ApplicationWindow):
                         self.selected_browser = bid
                     break
 
-        elif self.current_step == 1:
+        elif self.current_step == 2:
+            self.selected_extensions = {
+                ext_id for ext_id, chk in self.extensions_checkboxes.items() if chk.get_active()
+            }
+
+        elif self.current_step == 3:
             self.selected_apps = {
                 pkg for pkg, (c, _, _, _) in self.apps_checkboxes.items() if c.get_active()
             }
 
-        elif self.current_step == 2:
+        elif self.current_step == 4:
             self.selected_flatpaks = {
                 pkg for pkg, chk in self.flatpak_checkboxes.items() if chk.get_active()
             }
 
-        elif self.current_step == 3:
+        elif self.current_step == 5:
             self.selected_scripts = {
                 s_id for s_id, chk in self.scripts_checkboxes.items() if chk.get_active()
             }
 
     def update_step_view(self):
-        page_names = ["page_browser", "page_apps", "page_flatpaks", "page_scripts", "page_summary"]
+        page_names = ["page_drivers", "page_browser", "page_extensions", "page_apps", "page_flatpaks", "page_scripts", "page_summary"]
         self.stack.set_visible_child_name(page_names[self.current_step])
 
         # Progress bar
         self.wizard_prog_bar.set_fraction((self.current_step + 1) / self.total_steps)
 
-        # Update step titles (4 main configuration steps + summary)
+        # Update step titles (6 main configuration steps + summary)
         step_titles = [
-            "Browser Selection (Step 1/4)",
-            "Application Selection (Step 2/4)",
-            "Flatpak Applications (Step 3/4)",
-            "Setup Scripts (Step 4/4)",
+            "GPU Driver Selection (Step 1/6)",
+            "Browser Selection (Step 2/6)",
+            "Browser Extensions (Step 3/6)",
+            "Application Selection (Step 4/6)",
+            "Flatpak Applications (Step 5/6)",
+            "Setup Scripts (Step 6/6)",
             "Installation Plan Summary",
         ]
         self.title_label.set_markup(f"<span size='x-large' weight='bold'>{step_titles[self.current_step]}</span>")
@@ -1212,7 +1425,7 @@ class CLASSWizardWindow(Gtk.ApplicationWindow):
         self.btn_prev.set_sensitive(self.current_step > 0)
 
         # Last page (Summary):
-        if self.current_step == 4:
+        if self.current_step == 6:
             self.btn_skip.set_label("Abort Setup")
             self.btn_next.set_label("Install Now")
             self.btn_next.remove_css_class("suggested-action")
@@ -1237,15 +1450,23 @@ class CLASSWizardWindow(Gtk.ApplicationWindow):
             self.update_step_view()
 
     def on_skip_clicked(self, btn):
-        if self.current_step == 4:
+        if self.current_step == 6:
             # Abort on summary page
             self.get_application().quit()
             sys.exit(1)
 
         # Skip current step selections
         if self.current_step == 0:
-            self.selected_browser = ""
+            self.chk_gpu_drivers.set_active(False)
+            self.install_gpu_drivers = False
         elif self.current_step == 1:
+            self.selected_browser = ""
+        elif self.current_step == 2:
+            self.selected_extensions.clear()
+            for chk in self.extensions_checkboxes.values():
+                chk.set_active(False)
+            self.extensions_master_select_all.set_active(False)
+        elif self.current_step == 3:
             self.selected_apps.clear()
             for c, _, _, _ in self.apps_checkboxes.values():
                 c.set_active(False)
@@ -1254,11 +1475,11 @@ class CLASSWizardWindow(Gtk.ApplicationWindow):
             self.apps_master_select_all.set_active(False)
             self.queued_aur.clear()
             self.update_queue_ui()
-        elif self.current_step == 2:
+        elif self.current_step == 4:
             self.selected_flatpaks.clear()
             for chk in self.flatpak_checkboxes.values():
                 chk.set_active(False)
-        elif self.current_step == 3:
+        elif self.current_step == 5:
             self.selected_scripts.clear()
             for chk in self.scripts_checkboxes.values():
                 chk.set_active(False)
@@ -1269,10 +1490,11 @@ class CLASSWizardWindow(Gtk.ApplicationWindow):
     def on_next_clicked(self, btn):
         self.save_current_step_state()
 
-        if self.current_step == 4:
+        if self.current_step == 6:
             self.start_installation()
         else:
             self.current_step += 1
+            self.update_step_view()
             self.update_step_view()
 
     def write_config_file(self):
@@ -1302,9 +1524,10 @@ class CLASSWizardWindow(Gtk.ApplicationWindow):
                     extra_aur_list.append(plugin)
 
         data = {
-            "gpu": self.gpu_display_name,
-            "gpu_pkgs": self.detected_gpu_pkgs,
+            "gpu": self.gpu_display_name if self.install_gpu_drivers else "skip",
+            "gpu_pkgs": self.detected_gpu_pkgs if self.install_gpu_drivers else [],
             "browser_pkg": browser_pkgs,
+            "browser_extensions": sorted(list(self.selected_extensions)),
             "emu_pkgs": selected_emus,
             "main_pkgs": main_pkgs_list,
             "flatpak_pkgs": sorted(self.selected_flatpaks),

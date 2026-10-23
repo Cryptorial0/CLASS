@@ -48,8 +48,8 @@ chmod +x CLASS.sh
 
 ## What's Included
 
-### GPU Drivers
-Detects your graphics hardware via `lspci` and pulls the right Mesa / Vulkan packages automatically:
+### GPU Drivers (Optional / Opt-In)
+Detects your graphics hardware via `lspci` and allows you to optionally install the recommended 32-bit and 64-bit Mesa / Vulkan packages:
 - AMD: `mesa`, `lib32-mesa`, `vulkan-radeon`, `lib32-vulkan-radeon`
 - NVIDIA: `nvidia-utils`, `lib32-nvidia-utils`, `nvidia-settings` (plus `nvidia` driver packages if missing)
 - Intel: `mesa`, `lib32-mesa`, `vulkan-intel`, `lib32-vulkan-intel`, `intel-media-driver`
@@ -62,6 +62,17 @@ Choose one primary browser or search the repos for another:
 - Chromium
 - Vivaldi
 - Custom (search Arch repos and AUR)
+
+### Browser Extensions
+Pre-configures a curated suite of extensions via enterprise policy, so they are ready as soon as you launch your browser:
+- **Return YouTube Dislike**: Restores dislike count indicators on YouTube
+- **SponsorBlock**: Crowdsourced skip for sponsor segments, intros, and reminders
+- **Adblock for YouTube**: Removes pre-roll and display ads on YouTube
+- **Dark Reader**: Real-time dark mode for all websites
+- **Consent-O-Matic**: Automatically fills out and rejects GDPR/cookie consent popups
+- **AdNauseam**: Obfuscates tracking profiles while blocking ads (AMO for Firefox, unpacked sideload package for Chromium/Brave)
+- **Microsoft to Microslop**: Replaces occurrences of "Microsoft" with "Microslop"
+- **Hola VPN**: Web proxy and unblocker extension
 
 ### Software & Packages
 Grouped into toggleable categories (you can select a whole category with one click, or pick individual items):

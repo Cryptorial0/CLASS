@@ -375,6 +375,7 @@ if [ "$USE_GUI" -eq 1 ]; then
         gpu=$("$PYTHON_BIN" -c "import json; print(json.load(open('$CONFIG_FILE')).get('gpu', 'skip'))")
         mapfile -t gpu_pkgs < <("$PYTHON_BIN" -c "import json; [print(x) for x in json.load(open('$CONFIG_FILE')).get('gpu_pkgs', [])]")
         mapfile -t browser_pkg < <("$PYTHON_BIN" -c "import json; [print(x) for x in json.load(open('$CONFIG_FILE')).get('browser_pkg', [])]")
+        mapfile -t browser_extensions < <("$PYTHON_BIN" -c "import json; [print(x) for x in json.load(open('$CONFIG_FILE')).get('browser_extensions', [])]")
         mapfile -t emu_pkgs < <("$PYTHON_BIN" -c "import json; [print(x) for x in json.load(open('$CONFIG_FILE')).get('emu_pkgs', [])]")
         mapfile -t main_pkgs < <("$PYTHON_BIN" -c "import json; [print(x) for x in json.load(open('$CONFIG_FILE')).get('main_pkgs', [])]")
         mapfile -t flatpak_pkgs < <("$PYTHON_BIN" -c "import json; [print(x) for x in json.load(open('$CONFIG_FILE')).get('flatpak_pkgs', [])]")
@@ -428,35 +429,39 @@ if [ "$WIZARD_DONE" -eq 0 ]; then
     fi
 
     detected_gpus=()
-    gpu_pkgs=()
+    detected_gpu_pkgs=()
+    detected_gpu_tag="skip"
 
     if [ "$has_amd" -eq 1 ]; then
         detected_gpus+=("AMD Radeon (Mesa / RADV)")
-        gpu_pkgs+=(vulkan-radeon lib32-vulkan-radeon mesa lib32-mesa)
-        gpu="amd"
+        detected_gpu_pkgs+=(vulkan-radeon lib32-vulkan-radeon mesa lib32-mesa)
+        detected_gpu_tag="amd"
     fi
     if [ "$has_nvidia" -eq 1 ]; then
         detected_gpus+=("NVIDIA Proprietary")
         if pacman -Qq nvidia-utils &>/dev/null; then
-            gpu_pkgs+=(lib32-nvidia-utils nvidia-settings)
+            detected_gpu_pkgs+=(lib32-nvidia-utils nvidia-settings)
         else
-            gpu_pkgs+=(nvidia nvidia-utils lib32-nvidia-utils nvidia-settings)
+            detected_gpu_pkgs+=(nvidia nvidia-utils lib32-nvidia-utils nvidia-settings)
         fi
-        gpu="nvidia"
+        detected_gpu_tag="nvidia"
     fi
     if [ "$has_intel" -eq 1 ]; then
         detected_gpus+=("Intel Graphics (Mesa / Vulkan / Arc)")
-        gpu_pkgs+=(mesa lib32-mesa vulkan-intel lib32-vulkan-intel intel-media-driver)
-        gpu="intel"
+        detected_gpu_pkgs+=(mesa lib32-mesa vulkan-intel lib32-vulkan-intel intel-media-driver)
+        detected_gpu_tag="intel"
     fi
     if [ ${#detected_gpus[@]} -eq 0 ]; then
         detected_gpus+=("Generic / Virtual GPU (Mesa)")
-        gpu_pkgs+=(mesa lib32-mesa)
-        gpu="generic"
+        detected_gpu_pkgs+=(mesa lib32-mesa)
+        detected_gpu_tag="generic"
     fi
 
+    gpu="skip"
+    gpu_pkgs=()
+
     print_success "Auto-detected GPU: ${detected_gpus[*]}"
-    print_info "Driver packages ready: ${gpu_pkgs[*]}"
+    print_info "Available driver packages: ${detected_gpu_pkgs[*]}"
 
     # -----------------------------
     # Terminal TUI Packages Setup
@@ -495,6 +500,34 @@ if [ "$WIZARD_DONE" -eq 0 ]; then
         app_selections+=(0)
     done
 
+    # Browser Extensions: Curated list selected by default
+    ext_ids=(
+        "return-youtube-dislike"
+        "sponsorblock"
+        "adblock-for-youtube"
+        "darkreader"
+        "consent-o-matic"
+        "adnauseam"
+        "microsoft-to-microslop"
+        "hola-vpn"
+    )
+    ext_names=(
+        "Return YouTube Dislike"
+        "SponsorBlock"
+        "Adblock for YouTube"
+        "Dark Reader"
+        "Consent-O-Matic"
+        "AdNauseam"
+        "Microsoft to Microslop"
+        "Hola VPN"
+    )
+    num_extensions=${#ext_ids[@]}
+    ext_selections=()
+    for ((i=0; i<num_extensions; i++)); do
+        ext_selections+=(1)
+    done
+    browser_extensions=("${ext_ids[@]}")
+
     # Flatpaks: GSR selected by default
     flatpak_names=("GPU Screen Recorder (GSR)")
     flatpak_list_pkgs=("com.dec05eba.gpu_screen_recorder")
@@ -506,10 +539,36 @@ if [ "$WIZARD_DONE" -eq 0 ]; then
     script_selections=(1 1)
 
     current_step=1
-    while [ "$current_step" -le 5 ]; do
+    while [ "$current_step" -le 7 ]; do
         case "$current_step" in
             1)
-                print_step "Browser Selection (Step 1/4)"
+                print_step "GPU Driver Selection (Step 1/6)"
+                echo -e "${BWHITE}Hardware Detected:${NC} ${BMAGENTA}${detected_gpus[*]}${NC}"
+                echo -e "${BWHITE}Driver Packages:${NC}   ${BCYAN}${detected_gpu_pkgs[*]}${NC}"
+                echo ""
+                echo -e "GPU driver installation is ${BOLD}optional (opt-in)${NC}."
+                echo -e "  ${BCYAN}1)${NC} Skip GPU Drivers ${BGREEN}[Default]${NC}"
+                echo -e "  ${BCYAN}2)${NC} Install Auto-Detected GPU Drivers (${detected_gpus[*]})"
+                echo ""
+                read -p "  Your Choice [1-2, default=1]: " gpu_choice
+
+                case "${gpu_choice:-1}" in
+                    2|[yY]|[yY][eE][sS])
+                        gpu_pkgs=("${detected_gpu_pkgs[@]}")
+                        gpu="$detected_gpu_tag"
+                        print_success "Selected GPU drivers for installation."
+                        ;;
+                    *)
+                        gpu_pkgs=()
+                        gpu="skip"
+                        print_info "Skipping GPU driver installation."
+                        ;;
+                esac
+                current_step=2
+                ;;
+
+            2)
+                print_step "Browser Selection (Step 2/6)"
                 echo -e "${BWHITE}Select web browser to install:${NC}"
                 echo -e "  ${BCYAN}1)${NC} Brave Origin ${BGREEN}[Recommended]${NC}"
                 echo -e "  ${BCYAN}2)${NC} Firefox"
@@ -517,8 +576,14 @@ if [ "$WIZARD_DONE" -eq 0 ]; then
                 echo -e "  ${BCYAN}4)${NC} Vivaldi"
                 echo -e "  ${BCYAN}5)${NC} Other (Search Repositories / AUR)"
                 echo -e "  ${BCYAN}6)${NC} Skip"
+                echo -e "  ${BCYAN}p)${NC} Previous Step (GPU Drivers)"
                 echo ""
-                read -p "  Your Choice [1-6, default=1]: " browser_choice
+                read -p "  Your Choice [1-6, 'p'=Prev, default=1]: " browser_choice
+
+                if [[ "${browser_choice,,}" = "p" || "${browser_choice,,}" = "prev" || "${browser_choice,,}" = "back" ]]; then
+                    current_step=1
+                    continue
+                fi
 
                 case "${browser_choice:-1}" in
                     1) browser_pkg=(brave-origin-bin); print_success "Selected Brave Origin." ;;
@@ -564,17 +629,99 @@ if [ "$WIZARD_DONE" -eq 0 ]; then
                         print_info "Skipping browser installation."
                         ;;
                 esac
-                current_step=2
+                current_step=3
                 ;;
 
-            2)
-                print_step "Application Selection (Step 2/4)"
+            3)
+                print_step "Browser Extensions (Step 3/6)"
+                echo -e "${BWHITE}Select curated browser extensions to provision:${NC}"
+                echo -e "  - ${BGREEN}[*]${NC} indicates the extension is selected."
+                echo -e "  - Enter numbers (1-$num_extensions) separated by spaces to ${BOLD}toggle${NC} checkmarks."
+                echo -e "  - Type ${BCYAN}'a'${NC} or ${BCYAN}'all'${NC} to ${BOLD}SELECT ALL${NC} extensions."
+                echo -e "  - Type ${BCYAN}'n'${NC} or ${BCYAN}'none'${NC} to ${BOLD}UNSELECT ALL${NC} extensions."
+                echo -e "  - Type ${BCYAN}'p'${NC} to go to ${BOLD}PREVIOUS STEP${NC} (Browser Selection)."
+                echo -e "  - Press ${BCYAN}[Enter]${NC} (empty input) to confirm and continue."
+                echo ""
+
+                while true; do
+                    for ((i=0; i<num_extensions; i++)); do
+                        num=$((i + 1))
+                        char=" "
+                        [ "${ext_selections[i]}" -eq 1 ] && char="${BGREEN}*${NC}"
+                        printf "  %2d) [%b] %s\n" "$num" "$char" "${ext_names[i]}"
+                    done
+                    echo ""
+                    read -p "  Selection (1-$num_extensions, 'a'=All, 'n'=None, 'p'=Prev, Enter=Confirm): " ext_input
+
+                    if [[ "${ext_input,,}" = "p" || "${ext_input,,}" = "prev" || "${ext_input,,}" = "back" ]]; then
+                        current_step=2
+                        break
+                    fi
+
+                    if [ -z "$ext_input" ]; then
+                        browser_extensions=()
+                        for ((i=0; i<num_extensions; i++)); do
+                            if [ "${ext_selections[i]}" -eq 1 ]; then
+                                browser_extensions+=("${ext_ids[i]}")
+                            fi
+                        done
+                        if [ ${#browser_extensions[@]} -gt 0 ]; then
+                            print_success "Selected browser extensions: ${#browser_extensions[@]} extension(s)."
+                        else
+                            print_info "Skipping browser extensions."
+                        fi
+                        current_step=4
+                        break
+                    fi
+
+                    if [[ "${ext_input,,}" = "a" || "${ext_input,,}" = "all" ]]; then
+                        for ((i=0; i<num_extensions; i++)); do
+                            ext_selections[i]=1
+                        done
+                        clear 2>/dev/null || true
+                        print_header
+                        print_step "Browser Extensions (Step 3/6)"
+                        continue
+                    fi
+
+                    if [[ "${ext_input,,}" = "n" || "${ext_input,,}" = "none" || "$ext_input" = "0" ]]; then
+                        for ((i=0; i<num_extensions; i++)); do
+                            ext_selections[i]=0
+                        done
+                        clear 2>/dev/null || true
+                        print_header
+                        print_step "Browser Extensions (Step 3/6)"
+                        continue
+                    fi
+
+                    for val in $ext_input; do
+                        if [[ "$val" =~ ^[0-9]+$ ]] && [ "$val" -ge 1 ] && [ "$val" -le "$num_extensions" ]; then
+                            idx=$((val - 1))
+                            if [ "${ext_selections[idx]}" -eq 1 ]; then
+                                ext_selections[idx]=0
+                            else
+                                ext_selections[idx]=1
+                            fi
+                        else
+                            print_warning "Invalid input: $val. Skipping..."
+                            sleep 1
+                        fi
+                    done
+
+                    clear 2>/dev/null || true
+                    print_header
+                    print_step "Browser Extensions (Step 3/6)"
+                done
+                ;;
+
+            4)
+                print_step "Application Selection (Step 4/6)"
                 is_first_prompt=1
                 while true; do
                     if [ "$is_first_prompt" -eq 0 ]; then
                         clear 2>/dev/null || true
                         print_header
-                        print_step "Application Selection (Step 2/4)"
+                        print_step "Application Selection (Step 4/6)"
                     fi
                     is_first_prompt=0
 
@@ -585,7 +732,7 @@ if [ "$WIZARD_DONE" -eq 0 ]; then
                     echo -e "  - Type ${BCYAN}'n'${NC} or ${BCYAN}'none'${NC} (or ${BCYAN}0${NC}) to ${BOLD}UNSELECT ALL${NC} packages."
                     echo -e "  - Type ${BCYAN}'s'${NC} to ${BOLD}Search AUR${NC} for extra packages."
                     echo -e "  - Type ${BCYAN}'m'${NC} to add extra packages ${BOLD}manually${NC}."
-                    echo -e "  - Type ${BCYAN}'p'${NC} to go to ${BOLD}PREVIOUS STEP${NC} (Browser Selection)."
+                    echo -e "  - Type ${BCYAN}'p'${NC} to go to ${BOLD}PREVIOUS STEP${NC} (Browser Extensions)."
                     echo -e "  - Press ${BCYAN}[Enter]${NC} (empty input) to confirm and continue."
                     echo ""
 
@@ -618,7 +765,7 @@ if [ "$WIZARD_DONE" -eq 0 ]; then
                     read -p "  Selection (Numbers, 's'=Search AUR, 'm'=Manual, 'a'=All, 'n'=None, 'p'=Prev, Enter=Confirm): " selection_input
 
                     if [[ "${selection_input,,}" = "p" || "${selection_input,,}" = "prev" || "${selection_input,,}" = "back" ]]; then
-                        current_step=1
+                        current_step=3
                         break
                     fi
 
@@ -700,7 +847,7 @@ if [ "$WIZARD_DONE" -eq 0 ]; then
                         fi
 
                         print_success "Selected applications: ${#main_pkgs[@]} apps, ${#emu_pkgs[@]} emulators, ${#aur_pkgs[@]} extra AUR."
-                        current_step=3
+                        current_step=5
                         break
                     fi
 
@@ -735,8 +882,8 @@ if [ "$WIZARD_DONE" -eq 0 ]; then
                 done
                 ;;
 
-            3)
-                print_step "Flatpak Applications (Step 3/4)"
+            5)
+                print_step "Flatpak Applications (Step 5/6)"
                 echo -e "${BWHITE}Select Flatpak applications to install:${NC}"
                 echo -e "  - Enter number to toggle selection."
                 echo -e "  - Press ${BCYAN}[Enter]${NC} to confirm and continue."
@@ -751,7 +898,7 @@ if [ "$WIZARD_DONE" -eq 0 ]; then
                     read -p "  Selection (1=Toggle, 'p'=Previous, Enter=Confirm): " fp_input
 
                     if [[ "${fp_input,,}" = "p" || "${fp_input,,}" = "prev" || "${fp_input,,}" = "back" ]]; then
-                        current_step=2
+                        current_step=4
                         break
                     fi
 
@@ -763,7 +910,7 @@ if [ "$WIZARD_DONE" -eq 0 ]; then
                         else
                             print_info "Skipping Flatpak applications."
                         fi
-                        current_step=4
+                        current_step=6
                         break
                     fi
 
@@ -777,8 +924,8 @@ if [ "$WIZARD_DONE" -eq 0 ]; then
                 done
                 ;;
 
-            4)
-                print_step "Setup Scripts (Step 4/4)"
+            6)
+                print_step "Setup Scripts (Step 6/6)"
                 echo -e "${BWHITE}Select custom setup and management scripts to install:${NC}"
                 echo -e "  - Enter numbers (1-2) to toggle checkmarks."
                 echo -e "  - Type ${BCYAN}'a'${NC} to select all, ${BCYAN}'n'${NC} to unselect all."
@@ -797,7 +944,7 @@ if [ "$WIZARD_DONE" -eq 0 ]; then
                     read -p "  Selection (1/2=Toggle, 'a'=All, 'n'=None, 'p'=Previous, Enter=Confirm): " sc_input
 
                     if [[ "${sc_input,,}" = "p" || "${sc_input,,}" = "prev" || "${sc_input,,}" = "back" ]]; then
-                        current_step=3
+                        current_step=5
                         break
                     fi
 
@@ -810,7 +957,7 @@ if [ "$WIZARD_DONE" -eq 0 ]; then
                         else
                             print_info "Skipping custom setup scripts."
                         fi
-                        current_step=5
+                        current_step=7
                         break
                     fi
 
@@ -829,15 +976,16 @@ if [ "$WIZARD_DONE" -eq 0 ]; then
                 done
                 ;;
 
-            5)
+            7)
                 print_step "Installation Summary"
                 echo -e "${BCYAN}┌──────────────────────────────────────────────────────────────┐${NC}"
                 echo -e "${BCYAN}│${NC}               ${BWHITE}INSTALLATION PLAN SUMMARY${NC}                      ${BCYAN}│${NC}"
                 echo -e "${BCYAN}└──────────────────────────────────────────────────────────────┘${NC}"
                 echo -e " ${BOLD}The script will install the following components:${NC}"
                 echo ""
-                echo -e "  ${BWHITE}• GPU Drivers:${NC}   ${BMAGENTA}${gpu:-skip}${NC} (${gpu_pkgs[*]:-None})"
+                echo -e "  ${BWHITE}• GPU Drivers:${NC}   ${BMAGENTA}${gpu:-skip}${NC} (${gpu_pkgs[*]:-Skipped})"
                 echo -e "  ${BWHITE}• Browser:${NC}       ${BCYAN}${browser_pkg[*]:-None}${NC}"
+                echo -e "  ${BWHITE}• Extensions:${NC}    ${BCYAN}${browser_extensions[*]:-None}${NC}"
                 echo -e "  ${BWHITE}• Core System:${NC}   ${BWHITE}${core_pkgs[*]}${NC}"
                 echo -e "  ${BWHITE}• Main Apps:${NC}     ${BWHITE}${main_pkgs[*]:-None}${NC}"
                 echo -e "  ${BWHITE}• Emulators:${NC}     ${BWHITE}${emu_pkgs[*]:-None}${NC}"
@@ -855,7 +1003,7 @@ if [ "$WIZARD_DONE" -eq 0 ]; then
                 echo ""
                 read -p "  Confirm action [Enter=Install, 'p'=Previous]: " confirm_choice
                 if [[ "${confirm_choice,,}" = "p" || "${confirm_choice,,}" = "prev" || "${confirm_choice,,}" = "back" ]]; then
-                    current_step=4
+                    current_step=6
                     continue
                 fi
                 break
@@ -865,14 +1013,171 @@ if [ "$WIZARD_DONE" -eq 0 ]; then
 fi
 
 # -----------------------------
+# Browser Extensions Provisioning
+# -----------------------------
+configure_browser_extensions() {
+    if [ ${#browser_extensions[@]} -eq 0 ]; then
+        print_info "No browser extensions selected. Skipping extension provisioning."
+        return 0
+    fi
+
+    print_step "Provisioning Browser Extensions"
+    set_gui_progress 0.45 "Configuring Browser Extensions" "Setting up enterprise extension policies..."
+
+    local ext_json_list
+    ext_json_list=$(printf '%s\n' "${browser_extensions[@]}" | "$PYTHON_BIN" -c "import sys, json; print(json.dumps([l.strip() for l in sys.stdin if l.strip()]))")
+
+    local chosen_b="${browser_pkg[0]:-}"
+
+    # Generate policy files using python in /tmp
+    "$PYTHON_BIN" - <<EOF
+import json
+import os
+
+selected = set(json.loads('''$ext_json_list'''))
+
+EXT_DATA = {
+    "return-youtube-dislike": (
+        "gebbhagfogifgggkldgodflihgfeippi",
+        "{762f9885-5a13-4abd-9c77-433dcd38b8fd}",
+        "https://addons.mozilla.org/firefox/downloads/latest/return-youtube-dislikes/latest.xpi"
+    ),
+    "sponsorblock": (
+        "mnjggcdmjocbbbhaepdhchncahnbgone",
+        "sponsorBlocker@ajay.app",
+        "https://addons.mozilla.org/firefox/downloads/latest/sponsorblock/latest.xpi"
+    ),
+    "adblock-for-youtube": (
+        "cmedhionkhpnakcndndgjdbohmhepckk",
+        "jid1-q4sG8pYhq8KGHs@jetpack",
+        "https://addons.mozilla.org/firefox/downloads/latest/adblock-for-youtube/latest.xpi"
+    ),
+    "darkreader": (
+        "eimadpbcbfnmbkopoojfekhnkhdbieeh",
+        "addon@darkreader.org",
+        "https://addons.mozilla.org/firefox/downloads/latest/darkreader/latest.xpi"
+    ),
+    "consent-o-matic": (
+        "mljpablpbeekflopdjnioimmkigebmhi",
+        "gdpr@cavi.au.dk",
+        "https://addons.mozilla.org/firefox/downloads/latest/consent-o-matic/latest.xpi"
+    ),
+    "adnauseam": (
+        "",
+        "adnauseam@rednoise.org",
+        "https://addons.mozilla.org/firefox/downloads/latest/adnauseam/latest.xpi"
+    ),
+    "microsoft-to-microslop": (
+        "hlkljlkdinjnbfmclionhbefbnefcgll",
+        "microsoft-to-microslop@example.com",
+        "https://addons.mozilla.org/firefox/downloads/latest/microsoft-to-microslop/latest.xpi"
+    ),
+    "hola-vpn": (
+        "gkojfkhlekighikafcpjkiklfbnlmeio",
+        "",
+        ""
+    ),
+}
+
+# Chromium policies
+chromium_exts = {}
+for k in selected:
+    if k in EXT_DATA:
+        cid, _, _ = EXT_DATA[k]
+        if cid:
+            chromium_exts[cid] = {
+                "installation_mode": "normal_installed",
+                "update_url": "https://clients2.google.com/service/update2/crx"
+            }
+
+with open("/tmp/class_chromium_policy.json", "w") as f:
+    json.dump({"ExtensionSettings": chromium_exts}, f, indent=2)
+
+# Firefox policies
+firefox_exts = {}
+for k in selected:
+    if k in EXT_DATA:
+        _, f_guid, f_url = EXT_DATA[k]
+        if f_guid and f_url:
+            firefox_exts[f_guid] = {
+                "installation_mode": "normal_installed",
+                "install_url": f_url
+            }
+
+with open("/tmp/class_firefox_policy.json", "w") as f:
+    json.dump({"policies": {"ExtensionSettings": firefox_exts}}, f, indent=2)
+
+EOF
+
+    # Install Chromium policies into managed directories
+    local chrom_paths=(
+        "/etc/brave/policies/managed/class_extensions.json"
+        "/etc/chromium/policies/managed/class_extensions.json"
+        "/etc/opt/chrome/policies/managed/class_extensions.json"
+        "/etc/vivaldi/policies/managed/class_extensions.json"
+    )
+    for p in "${chrom_paths[@]}"; do
+        if sudo install -D -m 644 /tmp/class_chromium_policy.json "$p" 2>/dev/null; then
+            print_success "Configured Chromium extension policy in $p"
+        fi
+    done
+
+    # Install Firefox policies
+    local ff_paths=(
+        "/usr/lib/firefox/distribution/policies.json"
+        "/etc/firefox/policies/policies.json"
+    )
+    for p in "${ff_paths[@]}"; do
+        if sudo install -D -m 644 /tmp/class_firefox_policy.json "$p" 2>/dev/null; then
+            print_success "Configured Firefox extension policy in $p"
+        fi
+    done
+
+    rm -f /tmp/class_chromium_policy.json /tmp/class_firefox_policy.json
+
+    # Sideload AdNauseam for Chromium/Brave if selected
+    if [[ " ${browser_extensions[*]} " =~ " adnauseam " ]] && [[ "$chosen_b" != "firefox" ]]; then
+        local adn_dir="$HOME/.local/share/adnauseam"
+        mkdir -p "$adn_dir"
+        print_info "Downloading latest AdNauseam package for Chromium/Brave..."
+        if curl -sL "https://github.com/dhowe/AdNauseam/releases/latest/download/adnauseam.chromium.zip" -o /tmp/adnauseam.zip; then
+            if command -v unzip &>/dev/null; then
+                unzip -qo /tmp/adnauseam.zip -d "$adn_dir" 2>/dev/null || true
+            else
+                "$PYTHON_BIN" -c "import zipfile; zipfile.ZipFile('/tmp/adnauseam.zip').extractall('$adn_dir')" 2>/dev/null || true
+            fi
+            rm -f /tmp/adnauseam.zip
+            cat > "$adn_dir/README.txt" << 'EOF'
+AdNauseam is downloaded and unpacked in this directory.
+To enable in Brave / Chromium:
+1. Open brave://extensions or chrome://extensions
+2. Enable "Developer mode" (toggle top right)
+3. Click "Load unpacked" and select this folder (~/.local/share/adnauseam)
+EOF
+            print_success "AdNauseam extension unpacked in $adn_dir"
+        else
+            print_warning "Failed to download AdNauseam release package."
+        fi
+    fi
+
+    print_success "Browser extensions configured successfully."
+}
+
+# -----------------------------
 # Install everything
 # -----------------------------
 print_step "Starting Installation"
 set_gui_progress 0.05 "Preparing Installation" "Configuring package managers and driver repositories..."
 
-print_info "Installing core system and drivers..."
-set_gui_progress 0.15 "Installing Core System & GPU Drivers" "Installing MangoHud, PipeWire, Vulkan tools, and GPU drivers..."
-run_install "${core_pkgs[@]}" "${gpu_pkgs[@]}" || print_warning "Core installation had errors."
+if [ ${#gpu_pkgs[@]} -gt 0 ]; then
+    print_info "Installing core system and GPU drivers..."
+    set_gui_progress 0.15 "Installing Core System & GPU Drivers" "Installing core system and detected GPU drivers..."
+    run_install "${core_pkgs[@]}" "${gpu_pkgs[@]}" || print_warning "Core/driver installation had errors."
+else
+    print_info "Installing core system (GPU drivers skipped)..."
+    set_gui_progress 0.15 "Installing Core System" "Installing core system packages..."
+    run_install "${core_pkgs[@]}" || print_warning "Core installation had errors."
+fi
 
 if [ ${#browser_pkg[@]} -gt 0 ]; then
     print_info "Installing browser..."
@@ -909,6 +1214,8 @@ if [ ${#browser_pkg[@]} -gt 0 ]; then
         print_success "Installed $b_pkg successfully."
     fi
 fi
+
+configure_browser_extensions
 
 if [ ${#main_pkgs[@]} -gt 0 ]; then
     if [[ " ${main_pkgs[*]} " =~ " gamemode " ]]; then
