@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+
+echo -e "\e[1;36mLaunching Vencord Installer...\e[0m"
+sh -c "$(curl -sS https://raw.githubusercontent.com/Vendicated/VencordInstaller/main/install.sh)"
+# Check if Discord is currently running
+if pgrep -i "discord" > /dev/null; then
+    echo ""
+    echo -e "\e[1;33m[!] Discord is currently running.\e[0m"
+    read -p "Would you like to restart Discord now to apply Vencord? [Y/n]: " choice
+    choice=${choice:-Y}
+    case "$choice" in
+        [yY][eE][sS]|[yY])
+            echo -e "\e[1;36mRestarting Discord...\e[0m"
+            pkill -i -9 "discord" 2>/dev/null || true
+            sleep 1
+            if command -v discord &> /dev/null; then
+                nohup discord >/dev/null 2>&1 &
+                echo -e "\e[1;32m[OK] Discord restarted successfully!\e[0m"
+            fi
+            ;;
+        *)
+            echo "Skipping Discord restart. Please restart Discord manually."
+            ;;
+    esac
+fi

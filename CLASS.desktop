@@ -1,0 +1,9 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Cryptorial's Lazy Arch Setup Script (CLASS)
+Comment=Post-installation setup wizard for Arch Linux
+Exec=bash -c 'if [ -f "./CLASS.sh" ]; then ./CLASS.sh --gui; else curl -sL https://raw.githubusercontent.com/Cryptorial0/CLASS/master/CLASS.sh -o /tmp/CLASS.sh && bash /tmp/CLASS.sh --gui; fi'
+Icon=system-software-install
+Terminal=true
+Categories=System;Settings;Utility;
