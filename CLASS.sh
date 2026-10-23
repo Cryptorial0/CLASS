@@ -533,10 +533,20 @@ if [ "$WIZARD_DONE" -eq 0 ]; then
     flatpak_list_pkgs=("com.dec05eba.gpu_screen_recorder")
     flatpak_selections=(1)
 
-    # Setup Scripts: SLSsteam and Vencord selected by default
-    script_names=("SLSsteam" "Vencord")
-    script_list_pkgs=("slssteam" "vencord")
-    script_selections=(1 1)
+    # Setup Scripts: Standalone tools (Opt-in by default)
+    script_names=(
+        "SLSsteam Manager (slssteam)"
+        "Vencord Discord Mod (vencord)"
+        "NTFS Disk Repair & Auto-Mounter (fix-ntfs)"
+    )
+    script_descs=(
+        "Unlocks DLCs and manages achievements for Steam & Flatpak Steam."
+        "Installs and auto-updates the Vencord client mod for Discord."
+        "Repairs dirty NTFS drives and configures udisks2 for forced mounting."
+    )
+    script_list_pkgs=("slssteam" "vencord" "fix-ntfs")
+    num_scripts=${#script_list_pkgs[@]}
+    script_selections=(0 0 0)
 
     current_step=1
     while [ "$current_step" -le 7 ]; do
@@ -926,22 +936,24 @@ if [ "$WIZARD_DONE" -eq 0 ]; then
 
             6)
                 print_step "Setup Scripts (Step 6/6)"
-                echo -e "${BWHITE}Select custom setup and management scripts to install:${NC}"
-                echo -e "  - Enter numbers (1-2) to toggle checkmarks."
+                echo -e "${BWHITE}Select custom setup and management scripts to install (Optional):${NC}"
+                echo -e "  - ${BGREEN}[*]${NC} indicates the script is selected."
+                echo -e "  - Enter numbers (1-$num_scripts) to ${BOLD}toggle${NC} checkmarks."
                 echo -e "  - Type ${BCYAN}'a'${NC} to select all, ${BCYAN}'n'${NC} to unselect all."
-                echo -e "  - Press ${BCYAN}[Enter]${NC} to confirm and continue."
                 echo -e "  - Type ${BCYAN}'p'${NC} to go to ${BOLD}PREVIOUS STEP${NC} (Flatpaks)."
+                echo -e "  - Press ${BCYAN}[Enter]${NC} (empty input) to confirm and continue."
                 echo ""
 
                 while true; do
-                    char1=" "
-                    char2=" "
-                    [ "${script_selections[0]}" -eq 1 ] && char1="${BGREEN}*${NC}"
-                    [ "${script_selections[1]}" -eq 1 ] && char2="${BGREEN}*${NC}"
-                    echo -e "  1) [${char1}] SLSsteam (Steam DLC/achievement manager & auto-updater)"
-                    echo -e "  2) [${char2}] Vencord (Discord client mod & auto-restarter script)"
+                    for ((i=0; i<num_scripts; i++)); do
+                        num=$((i + 1))
+                        char=" "
+                        [ "${script_selections[i]}" -eq 1 ] && char="${BGREEN}*${NC}"
+                        echo -e "  $num) [${char}] ${BWHITE}${script_names[i]}${NC}"
+                        echo -e "         ${ITALIC}${script_descs[i]}${NC}"
+                    done
                     echo ""
-                    read -p "  Selection (1/2=Toggle, 'a'=All, 'n'=None, 'p'=Previous, Enter=Confirm): " sc_input
+                    read -p "  Selection (1-$num_scripts, 'a'=All, 'n'=None, 'p'=Previous, Enter=Confirm): " sc_input
 
                     if [[ "${sc_input,,}" = "p" || "${sc_input,,}" = "prev" || "${sc_input,,}" = "back" ]]; then
                         current_step=5
@@ -950,8 +962,9 @@ if [ "$WIZARD_DONE" -eq 0 ]; then
 
                     if [ -z "$sc_input" ]; then
                         script_pkgs=()
-                        [ "${script_selections[0]}" -eq 1 ] && script_pkgs+=("slssteam")
-                        [ "${script_selections[1]}" -eq 1 ] && script_pkgs+=("vencord")
+                        for ((i=0; i<num_scripts; i++)); do
+                            [ "${script_selections[i]}" -eq 1 ] && script_pkgs+=("${script_list_pkgs[i]}")
+                        done
                         if [ ${#script_pkgs[@]} -gt 0 ]; then
                             print_success "Selected Scripts: ${script_pkgs[*]}"
                         else
@@ -962,17 +975,25 @@ if [ "$WIZARD_DONE" -eq 0 ]; then
                     fi
 
                     if [[ "${sc_input,,}" = "a" || "${sc_input,,}" = "all" ]]; then
-                        script_selections=(1 1)
+                        for ((i=0; i<num_scripts; i++)); do
+                            script_selections[i]=1
+                        done
                     elif [[ "${sc_input,,}" = "n" || "${sc_input,,}" = "none" || "$sc_input" = "0" ]]; then
-                        script_selections=(0 0)
+                        for ((i=0; i<num_scripts; i++)); do
+                            script_selections[i]=0
+                        done
                     else
                         for token in $sc_input; do
-                            case "$token" in
-                                1) script_selections[0]=$(( 1 - script_selections[0] )) ;;
-                                2) script_selections[1]=$(( 1 - script_selections[1] )) ;;
-                            esac
+                            if [[ "$token" =~ ^[0-9]+$ ]] && [ "$token" -ge 1 ] && [ "$token" -le "$num_scripts" ]; then
+                                idx=$((token - 1))
+                                script_selections[idx]=$(( 1 - script_selections[idx] ))
+                            fi
                         done
                     fi
+
+                    clear 2>/dev/null || true
+                    print_header
+                    print_step "Setup Scripts (Step 6/6)"
                 done
                 ;;
 
@@ -1311,6 +1332,40 @@ if [[ " ${script_pkgs[*]} " =~ " slssteam " ]]; then
         print_success "Installed slssteam script in /usr/local/bin/slssteam"
     else
         print_warning "Failed to locate or download slssteam script."
+    fi
+fi
+
+# Install fix-ntfs script if selected
+if [[ " ${script_pkgs[*]} " =~ " fix-ntfs " ]]; then
+    print_info "Installing NTFS Disk Repair tool (fix-ntfs)..."
+    fixntfs_src="$SCRIPT_DIR/fix-ntfs"
+    if [ ! -f "$fixntfs_src" ]; then
+        fixntfs_src="/tmp/fix-ntfs"
+        curl -sL "https://raw.githubusercontent.com/Cryptorial0/CLASS/master/fix-ntfs" -o "$fixntfs_src" 2>/dev/null || true
+    fi
+    if [ -f "$fixntfs_src" ]; then
+        sudo cp "$fixntfs_src" /usr/local/bin/fix-ntfs
+        sudo chmod +x /usr/local/bin/fix-ntfs
+        mkdir -p "$HOME/.local/bin"
+        cp "$fixntfs_src" "$HOME/.local/bin/fix-ntfs"
+        chmod +x "$HOME/.local/bin/fix-ntfs"
+
+        # Also create desktop entry for application menu
+        sudo bash -c 'cat > /usr/share/applications/fix-ntfs.desktop <<\EOF
+[Desktop Entry]
+Name=NTFS Disk Repair & Mount
+Comment=Repair and auto-mount dirty or unmountable NTFS drives
+Exec=fix-ntfs
+Icon=drive-harddisk
+Terminal=true
+Type=Application
+Categories=System;Utility;
+Keywords=ntfs;disk;repair;mount;fix;
+EOF'
+        sudo chmod 644 /usr/share/applications/fix-ntfs.desktop 2>/dev/null || true
+        print_success "Installed fix-ntfs in /usr/local/bin/fix-ntfs (and created desktop launcher)"
+    else
+        print_warning "Failed to locate or download fix-ntfs script."
     fi
 fi
 

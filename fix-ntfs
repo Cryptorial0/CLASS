@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+set -e
+
+echo "============================================"
+echo "         NTFS Disk Repair & Mount Tool      "
+echo "============================================"
+echo ""
+
+# Ensure sudo / root credentials
+if [ "$EUID" -ne 0 ]; then
+    echo "Root privileges are needed to repair NTFS drives."
+    sudo -v || { echo "Authentication failed. Exiting."; exit 1; }
+fi
+
+# 1. Check if ntfsprogs / ntfs-3g is installed (provides ntfsfix)
+if ! command -v ntfsfix &>/dev/null; then
+    echo "[-] ntfsprogs (ntfsfix) is not installed."
+    echo "[*] Installing ntfsprogs and ntfs-3g via pacman..."
+    sudo pacman -S --noconfirm --needed ntfsprogs ntfs-3g
+fi
+
+# 2. Configure udisks2 to permanently allow 'force' mount for ntfs3
+UDISKS_CONF="/etc/udisks2/mount_options.conf"
+if ! grep -q "force" "$UDISKS_CONF" 2>/dev/null; then
+    echo "[*] Configuring udisks2 to automatically allow and force mount dirty NTFS drives..."
+    sudo mkdir -p /etc/udisks2
+    sudo tee "$UDISKS_CONF" >/dev/null <<'EOF'
+[defaults]
+ntfs_defaults=uid=$UID,gid=$GID,force
+ntfs_allow=uid=$UID,gid=$GID,umask,dmask,fmask,locale,norecover,ignore_case,windows_names,compression,nocompression,big_writes,force
+ntfs:ntfs3_defaults=uid=$UID,gid=$GID,force
+ntfs:ntfs3_allow=uid=$UID,gid=$GID,umask,dmask,fmask,iocharset,discard,nodiscard,sparse,nosparse,hidden,nohidden,sys_immutable,nosys_immutable,showmeta,noshowmeta,prealloc,noprealloc,hide_dot_files,nohide_dot_files,windows_names,nocase,case,force
+EOF
+    echo "[+] udisks2 configuration updated."
+fi
+
+# 3. Find NTFS devices
+NTFS_DEVS=$(lsblk -nr -o PATH,FSTYPE | awk '$2=="ntfs" {print $1}')
+
+if [ -z "$NTFS_DEVS" ]; then
+    echo "[!] No NTFS partitions detected on the system."
+    notify-send "NTFS Fix" "No NTFS drives found to repair." 2>/dev/null || true
+    read -t 5 -n 1 -s -r -p "Press any key to exit..." || true
+    echo ""
+    exit 0
+fi
+
+echo "[*] Found NTFS partition(s): $NTFS_DEVS"
+echo ""
+
+for dev in $NTFS_DEVS; do
+    echo "--------------------------------------------"
+    echo "[*] Processing $dev..."
+    
+    # Unmount if currently mounted
+    if grep -q "$dev" /proc/mounts; then
+        echo "[*] Unmounting $dev..."
+        udisksctl unmount -b "$dev" 2>/dev/null || sudo umount -f "$dev" 2>/dev/null || true
+    fi
+
+    # Clear dirty flag & reset journal if ntfsfix exists
+    if command -v ntfsfix &>/dev/null; then
+        echo "[*] Clearing dirty bit and resetting journal on $dev..."
+        sudo ntfsfix -d "$dev" || true
+    fi
+
+    echo "[*] Mounting $dev..."
+    # Mount using udisksctl as user
+    if udisksctl mount -b "$dev"; then
+        echo "[+] Successfully mounted $dev with Read/Write access!"
+        notify-send -u normal "NTFS Disk Fixed" "$dev mounted with read/write access!" 2>/dev/null || true
+    else
+        echo "[!] Standard mount failed, attempting forced mount..."
+        TARGET_USER="${SUDO_USER:-$USER}"
+        TARGET_UID=$(id -u "$TARGET_USER")
+        TARGET_GID=$(id -g "$TARGET_USER")
+        sudo mkdir -p /run/media/"$TARGET_USER"/ntfs-disk
+        sudo mount -t ntfs3 -o "force,uid=$TARGET_UID,gid=$TARGET_GID" "$dev" /run/media/"$TARGET_USER"/ntfs-disk || true
+        notify-send -u normal "NTFS Disk Fixed" "$dev mounted at /run/media/$TARGET_USER/ntfs-disk" 2>/dev/null || true
+    fi
+done
+
+echo ""
+echo "============================================"
+echo "[+] All done! NTFS disk(s) repaired and mounted."
+echo "============================================"
+echo ""
+read -t 5 -n 1 -s -r -p "Closing in 5 seconds (or press any key)..." || true
+echo ""

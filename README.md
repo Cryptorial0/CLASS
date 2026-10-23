@@ -88,10 +88,11 @@ Need something not listed? The bottom of the apps page has an embedded AUR searc
 ### Flatpaks
 Flathub is configured automatically. Includes GPU Screen Recorder (`com.dec05eba.gpu_screen_recorder`) pre-selected by default with a toggle to turn it off.
 
-### Custom Scripts
+### Custom Scripts (Optional / Opt-In)
 Installs standalone helper tools directly to `/usr/local/bin` and `~/.local/bin`:
 - `slssteam`: CLI manager and auto-updater for SLSsteam DLC/achievement integration on Steam and Flatpak Steam
 - `vencord`: Automated installer and restarter utility for Vencord on Discord
+- `fix-ntfs`: NTFS disk repair and auto-mount utility that clears dirty journal flags via `ntfsfix` and permanently configures `udisks2` for forced mounting (includes desktop menu launcher)
 - `yayf`: Interactive fuzzy finder helper (`fzf`) for searching and previewing AUR packages
 
 ## How It Works

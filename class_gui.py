@@ -282,19 +282,25 @@ FLATPAK_APPS = [
     ),
 ]
 
-# Custom Setup & Management Scripts section
+# Custom Setup & Management Scripts section (Optional / Opt-in)
 SCRIPTS = [
     (
         "slssteam",
-        "SLSsteam Manager",
-        "Automated updater and CLI manager for SLSsteam on Steam and Flatpak Steam",
-        True  # Selected by default, can be ticked/unticked
+        "SLSsteam Manager (slssteam)",
+        "CLI manager and auto-updater for SLSsteam. Unlocks DLCs and manages achievements for Steam and Flatpak Steam.",
+        False  # Opt-in by default
     ),
     (
         "vencord",
-        "Vencord & Updater",
-        "Discord client mod installer and updater command utility",
-        True  # Selected by default, can be ticked/unticked
+        "Vencord Discord Mod (vencord)",
+        "Automated installer and restarter utility for the Vencord client enhancement suite on Discord.",
+        False  # Opt-in by default
+    ),
+    (
+        "fix-ntfs",
+        "NTFS Disk Repair & Auto-Mounter (fix-ntfs)",
+        "Repairs dirty/unmountable NTFS drives, resets journal flags via ntfsfix, and permanently configures udisks2 for forced mounting.",
+        False  # Opt-in by default
     ),
 ]
 
@@ -1132,7 +1138,7 @@ class CLASSWizardWindow(Gtk.ApplicationWindow):
 
         info = Gtk.Label()
         info.set_halign(Gtk.Align.START)
-        info.set_markup("<b>Select custom setup and management scripts to install:</b>\n<span size='small' alpha='65%'>Standalone helper tools and utility managers that can be launched from the terminal or application menu.</span>")
+        info.set_markup("<b>Select custom setup and management scripts to install (Optional):</b>\n<span size='small' alpha='65%'>Standalone helper tools and utility managers that can be launched from the terminal or application menu. All scripts are opt-in.</span>")
         page.append(info)
 
         scrolled = Gtk.ScrolledWindow()
@@ -1265,7 +1271,9 @@ class CLASSWizardWindow(Gtk.ApplicationWindow):
             if s == "slssteam":
                 scripts_display.append("SLSsteam Manager (slssteam)")
             elif s == "vencord":
-                scripts_display.append("Vencord & Updater (vencord)")
+                scripts_display.append("Vencord Discord Mod (vencord)")
+            elif s == "fix-ntfs":
+                scripts_display.append("NTFS Disk Repair & Auto-Mounter (fix-ntfs)")
             else:
                 scripts_display.append(s)
         add_card(f"Setup Scripts ({len(self.selected_scripts)})", scripts_display)
