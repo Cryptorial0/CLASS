@@ -1047,23 +1047,101 @@ fi
 # Browser Extensions Provisioning
 # -----------------------------
 configure_browser_extensions() {
-    if [ ${#browser_pkg[@]} -eq 0 ]; then
-        print_info "Browser installation was skipped. Skipping browser extension provisioning."
-        return 0
-    fi
-
     if [ ${#browser_extensions[@]} -eq 0 ]; then
         print_info "No browser extensions selected. Skipping extension provisioning."
         return 0
     fi
 
+    local chosen_b="${browser_pkg[0]:-}"
+    local target_browsers=()
+
+    if [ -n "$chosen_b" ]; then
+        # User explicitly selected a browser in CLASS
+        case "$chosen_b" in
+            brave*|*brave*) target_browsers+=(brave) ;;
+            firefox*) target_browsers+=(firefox) ;;
+            chromium*) target_browsers+=(chromium) ;;
+            vivaldi*) target_browsers+=(vivaldi) ;;
+            *chrome*) target_browsers+=(chrome) ;;
+            *edge*) target_browsers+=(edge) ;;
+            *)
+                if [[ "$chosen_b" =~ (librewolf|floorp|waterfox|zen) ]]; then
+                    target_browsers+=(firefox)
+                elif [[ "$chosen_b" =~ (opera|thorium|ungoogled) ]]; then
+                    target_browsers+=(chromium)
+                fi
+                ;;
+        esac
+    else
+        # Browser selection was skipped: auto-detect installed browsers on the system
+        if command -v brave &>/dev/null || command -v brave-browser &>/dev/null || pacman -Qq brave-bin &>/dev/null 2>&1 || pacman -Qq brave-origin-bin &>/dev/null 2>&1 || (flatpak list --app 2>/dev/null | grep -qi "com.brave.Browser"); then
+            target_browsers+=(brave)
+        fi
+        if command -v firefox &>/dev/null || pacman -Qq firefox &>/dev/null 2>&1 || (flatpak list --app 2>/dev/null | grep -qi "org.mozilla.firefox"); then
+            target_browsers+=(firefox)
+        fi
+        if command -v chromium &>/dev/null || pacman -Qq chromium &>/dev/null 2>&1 || (flatpak list --app 2>/dev/null | grep -qi "org.chromium.Chromium"); then
+            target_browsers+=(chromium)
+        fi
+        if command -v vivaldi &>/dev/null || command -v vivaldi-stable &>/dev/null || pacman -Qq vivaldi &>/dev/null 2>&1 || (flatpak list --app 2>/dev/null | grep -qi "com.vivaldi.Vivaldi"); then
+            target_browsers+=(vivaldi)
+        fi
+        if command -v google-chrome &>/dev/null || command -v google-chrome-stable &>/dev/null || pacman -Qq google-chrome &>/dev/null 2>&1 || (flatpak list --app 2>/dev/null | grep -qi "com.google.Chrome"); then
+            target_browsers+=(chrome)
+        fi
+        if command -v microsoft-edge &>/dev/null || command -v microsoft-edge-stable &>/dev/null || pacman -Qq microsoft-edge-stable-bin &>/dev/null 2>&1; then
+            target_browsers+=(edge)
+        fi
+    fi
+
+    if [ ${#target_browsers[@]} -eq 0 ]; then
+        print_info "No supported web browser selected or detected on the system. Skipping browser extension provisioning."
+        return 0
+    fi
+
     print_step "Provisioning Browser Extensions"
     set_gui_progress 0.45 "Configuring Browser Extensions" "Setting up enterprise extension policies..."
+    print_info "Configuring extensions for target browser(s): ${target_browsers[*]}"
 
     local ext_json_list
     ext_json_list=$(printf '%s\n' "${browser_extensions[@]}" | "$PYTHON_BIN" -c "import sys, json; print(json.dumps([l.strip() for l in sys.stdin if l.strip()]))")
 
-    local chosen_b="${browser_pkg[0]:-}"
+    local has_chromium_targets=0
+    local has_firefox_targets=0
+    local chrom_paths=()
+    local ff_paths=()
+
+    for tb in "${target_browsers[@]}"; do
+        case "$tb" in
+            brave)
+                chrom_paths+=("/etc/brave/policies/managed/class_extensions.json")
+                has_chromium_targets=1
+                ;;
+            chromium)
+                chrom_paths+=("/etc/chromium/policies/managed/class_extensions.json")
+                has_chromium_targets=1
+                ;;
+            chrome)
+                chrom_paths+=("/etc/opt/chrome/policies/managed/class_extensions.json")
+                has_chromium_targets=1
+                ;;
+            vivaldi)
+                chrom_paths+=("/etc/vivaldi/policies/managed/class_extensions.json")
+                has_chromium_targets=1
+                ;;
+            edge)
+                chrom_paths+=("/etc/opt/edge/policies/managed/class_extensions.json")
+                has_chromium_targets=1
+                ;;
+            firefox)
+                ff_paths+=(
+                    "/usr/lib/firefox/distribution/policies.json"
+                    "/etc/firefox/policies/policies.json"
+                )
+                has_firefox_targets=1
+                ;;
+        esac
+    done
 
     # Generate policy files using python in /tmp
     "$PYTHON_BIN" - <<EOF
@@ -1071,6 +1149,8 @@ import json
 import os
 
 selected = set(json.loads('''$ext_json_list'''))
+has_chromium = bool(int('''$has_chromium_targets'''))
+has_firefox = bool(int('''$has_firefox_targets'''))
 
 EXT_DATA = {
     "return-youtube-dislike": (
@@ -1116,63 +1196,59 @@ EXT_DATA = {
 }
 
 # Chromium policies
-chromium_exts = {}
-for k in selected:
-    if k in EXT_DATA:
-        cid, _, _ = EXT_DATA[k]
-        if cid:
-            chromium_exts[cid] = {
-                "installation_mode": "normal_installed",
-                "update_url": "https://clients2.google.com/service/update2/crx"
-            }
+if has_chromium:
+    chromium_exts = {}
+    for k in selected:
+        if k in EXT_DATA:
+            cid, _, _ = EXT_DATA[k]
+            if cid:
+                chromium_exts[cid] = {
+                    "installation_mode": "normal_installed",
+                    "update_url": "https://clients2.google.com/service/update2/crx"
+                }
 
-with open("/tmp/class_chromium_policy.json", "w") as f:
-    json.dump({"ExtensionSettings": chromium_exts}, f, indent=2)
+    with open("/tmp/class_chromium_policy.json", "w") as f:
+        json.dump({"ExtensionSettings": chromium_exts}, f, indent=2)
 
 # Firefox policies
-firefox_exts = {}
-for k in selected:
-    if k in EXT_DATA:
-        _, f_guid, f_url = EXT_DATA[k]
-        if f_guid and f_url:
-            firefox_exts[f_guid] = {
-                "installation_mode": "normal_installed",
-                "install_url": f_url
-            }
+if has_firefox:
+    firefox_exts = {}
+    for k in selected:
+        if k in EXT_DATA:
+            _, f_guid, f_url = EXT_DATA[k]
+            if f_guid and f_url:
+                firefox_exts[f_guid] = {
+                    "installation_mode": "normal_installed",
+                    "install_url": f_url
+                }
 
-with open("/tmp/class_firefox_policy.json", "w") as f:
-    json.dump({"policies": {"ExtensionSettings": firefox_exts}}, f, indent=2)
+    with open("/tmp/class_firefox_policy.json", "w") as f:
+        json.dump({"policies": {"ExtensionSettings": firefox_exts}}, f, indent=2)
 
 EOF
 
-    # Install Chromium policies into managed directories
-    local chrom_paths=(
-        "/etc/brave/policies/managed/class_extensions.json"
-        "/etc/chromium/policies/managed/class_extensions.json"
-        "/etc/opt/chrome/policies/managed/class_extensions.json"
-        "/etc/vivaldi/policies/managed/class_extensions.json"
-    )
-    for p in "${chrom_paths[@]}"; do
-        if sudo install -D -m 644 /tmp/class_chromium_policy.json "$p" 2>/dev/null; then
-            print_success "Configured Chromium extension policy in $p"
-        fi
-    done
+    # Install Chromium policies into targeted directories only
+    if [ "$has_chromium_targets" -eq 1 ] && [ -f /tmp/class_chromium_policy.json ]; then
+        for p in "${chrom_paths[@]}"; do
+            if sudo install -D -m 644 /tmp/class_chromium_policy.json "$p" 2>/dev/null; then
+                print_success "Configured Chromium extension policy in $p"
+            fi
+        done
+    fi
 
-    # Install Firefox policies
-    local ff_paths=(
-        "/usr/lib/firefox/distribution/policies.json"
-        "/etc/firefox/policies/policies.json"
-    )
-    for p in "${ff_paths[@]}"; do
-        if sudo install -D -m 644 /tmp/class_firefox_policy.json "$p" 2>/dev/null; then
-            print_success "Configured Firefox extension policy in $p"
-        fi
-    done
+    # Install Firefox policies into targeted directories only
+    if [ "$has_firefox_targets" -eq 1 ] && [ -f /tmp/class_firefox_policy.json ]; then
+        for p in "${ff_paths[@]}"; do
+            if sudo install -D -m 644 /tmp/class_firefox_policy.json "$p" 2>/dev/null; then
+                print_success "Configured Firefox extension policy in $p"
+            fi
+        done
+    fi
 
     rm -f /tmp/class_chromium_policy.json /tmp/class_firefox_policy.json
 
-    # Sideload AdNauseam for Chromium/Brave if selected
-    if [[ " ${browser_extensions[*]} " =~ " adnauseam " ]] && [[ "$chosen_b" != "firefox" ]]; then
+    # Sideload AdNauseam for Chromium/Brave if selected and a Chromium-based browser is targeted
+    if [[ " ${browser_extensions[*]} " =~ " adnauseam " ]] && [ "$has_chromium_targets" -eq 1 ]; then
         local adn_dir="$HOME/.local/share/adnauseam"
         mkdir -p "$adn_dir"
         print_info "Downloading latest AdNauseam package for Chromium/Brave..."
@@ -1195,6 +1271,22 @@ EOF
             print_warning "Failed to download AdNauseam release package."
         fi
     fi
+
+    # Clean up empty policy directories for browsers not installed or targeted
+    for untargeted in brave chrome vivaldi; do
+        if ! [[ " ${target_browsers[*]} " =~ " $untargeted " ]]; then
+            local orphan_path=""
+            case "$untargeted" in
+                brave) orphan_path="/etc/brave/policies/managed/class_extensions.json" ;;
+                chrome) orphan_path="/etc/opt/chrome/policies/managed/class_extensions.json" ;;
+                vivaldi) orphan_path="/etc/vivaldi/policies/managed/class_extensions.json" ;;
+            esac
+            if [ -n "$orphan_path" ] && [ -f "$orphan_path" ]; then
+                sudo rm -f "$orphan_path"
+                sudo rmdir -p "$(dirname "$orphan_path")" 2>/dev/null || true
+            fi
+        fi
+    done
 
     print_success "Browser extensions configured successfully."
 }

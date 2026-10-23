@@ -1534,8 +1534,8 @@ class CLASSWizardWindow(Gtk.ApplicationWindow):
                 if plugin not in extra_aur_list and plugin not in main_pkgs_list:
                     extra_aur_list.append(plugin)
 
-        # If no browser was selected (skipped), extensions shouldn't be installed
-        effective_extensions = sorted(list(self.selected_extensions)) if browser_pkgs else []
+        # Selected extensions will be configured for the chosen browser or auto-detected installed browsers
+        effective_extensions = sorted(list(self.selected_extensions))
 
         data = {
             "gpu": self.gpu_display_name if self.install_gpu_drivers else "skip",
