@@ -1282,7 +1282,10 @@ class CLASSWizardWindow(Gtk.ApplicationWindow):
         add_card(f"Custom AUR Packages ({len(self.queued_aur)})", sorted(self.queued_aur))
 
         # Core summary
-        add_card("Core System & Tweaks", "PipeWire, Vulkan-Tools, Flatpak")
+        core_summary = "Flatpak"
+        if de == "kde":
+            core_summary += ", Plasma Browser Integration"
+        add_card("Core System", core_summary)
 
     # -------------------------------------------------------------
     # Live Descriptive Progress Screen
@@ -1531,11 +1534,14 @@ class CLASSWizardWindow(Gtk.ApplicationWindow):
                 if plugin not in extra_aur_list and plugin not in main_pkgs_list:
                     extra_aur_list.append(plugin)
 
+        # If no browser was selected (skipped), extensions shouldn't be installed
+        effective_extensions = sorted(list(self.selected_extensions)) if browser_pkgs else []
+
         data = {
             "gpu": self.gpu_display_name if self.install_gpu_drivers else "skip",
             "gpu_pkgs": self.detected_gpu_pkgs if self.install_gpu_drivers else [],
             "browser_pkg": browser_pkgs,
-            "browser_extensions": sorted(list(self.selected_extensions)),
+            "browser_extensions": effective_extensions,
             "emu_pkgs": selected_emus,
             "main_pkgs": main_pkgs_list,
             "flatpak_pkgs": sorted(self.selected_flatpaks),

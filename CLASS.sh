@@ -165,17 +165,32 @@ fi
 # -----------------------------
 run_install() {
     if [ "$#" -eq 0 ]; then return 0; fi
-    echo -e "\n--- Installing packages: $@ ---" >> "$LOG_FILE"
+    
+    # Filter out packages already installed on the system to prevent unnecessary partial upgrades
+    local to_install=()
+    for pkg in "$@"; do
+        if pacman -Qq "$pkg" &>/dev/null; then
+            print_info "$pkg is already installed -- skipping."
+        else
+            to_install+=("$pkg")
+        fi
+    done
+
+    if [ ${#to_install[@]} -eq 0 ]; then
+        return 0
+    fi
+
+    echo -e "\n--- Installing packages: ${to_install[*]} ---" >> "$LOG_FILE"
     
     # Try to install all packages together first for efficiency
-    if yay -S --needed --noconfirm --cleanmenu=false --diffmenu=false "$@" 2>&1 | tee -a "$LOG_FILE"; then
+    if yay -S --needed --noconfirm --cleanmenu=false --diffmenu=false "${to_install[@]}" 2>&1 | tee -a "$LOG_FILE"; then
         return 0
     fi
     
     # If batch installation fails, fall back to installing individually
     print_warning "Batch installation failed. Attempting to install packages individually..."
     local failed_pkgs=()
-    for pkg in "$@"; do
+    for pkg in "${to_install[@]}"; do
         print_info "Installing $pkg..."
         if ! yay -S --needed --noconfirm --cleanmenu=false --diffmenu=false "$pkg" 2>&1 | tee -a "$LOG_FILE"; then
             print_error "Failed to install $pkg"
@@ -289,12 +304,7 @@ else
 fi
 
 core_pkgs=(
-    mangohud lib32-mangohud
-    vulkan-tools
-    libdrm lib32-libdrm
-    pipewire pipewire-alsa pipewire-pulse wireplumber
     flatpak
-    jq p7zip curl
 )
 
 if [[ "$DE" == "kde" ]]; then
@@ -350,7 +360,7 @@ if [ "$USE_GUI" -eq 1 ]; then
     if [ ! -s "$GUI_SCRIPT" ]; then
         GUI_SCRIPT="/tmp/class_gui.py"
         print_info "Downloading graphical wizard..."
-        curl -sL "https://raw.githubusercontent.com/Cryptorial0/CLASS/master/class_gui.py" -o "$GUI_SCRIPT" 2>/dev/null || true
+        curl -sL -H "Cache-Control: no-cache" "https://raw.githubusercontent.com/Cryptorial0/CLASS/master/class_gui.py?$(date +%s)" -o "$GUI_SCRIPT" 2>/dev/null || true
     fi
 
     gtk_err=$("$PYTHON_BIN" -c "import gi; gi.require_version('Gtk', '4.0'); from gi.repository import Gtk" 2>&1 || true)
@@ -1037,6 +1047,11 @@ fi
 # Browser Extensions Provisioning
 # -----------------------------
 configure_browser_extensions() {
+    if [ ${#browser_pkg[@]} -eq 0 ]; then
+        print_info "Browser installation was skipped. Skipping browser extension provisioning."
+        return 0
+    fi
+
     if [ ${#browser_extensions[@]} -eq 0 ]; then
         print_info "No browser extensions selected. Skipping extension provisioning."
         return 0
@@ -1190,14 +1205,16 @@ EOF
 print_step "Starting Installation"
 set_gui_progress 0.05 "Preparing Installation" "Configuring package managers and driver repositories..."
 
-if [ ${#gpu_pkgs[@]} -gt 0 ]; then
-    print_info "Installing core system and GPU drivers..."
-    set_gui_progress 0.15 "Installing Core System & GPU Drivers" "Installing core system and detected GPU drivers..."
-    run_install "${core_pkgs[@]}" "${gpu_pkgs[@]}" || print_warning "Core/driver installation had errors."
-else
-    print_info "Installing core system (GPU drivers skipped)..."
-    set_gui_progress 0.15 "Installing Core System" "Installing core system packages..."
+if [ ${#core_pkgs[@]} -gt 0 ]; then
+    print_info "Ensuring core system packages are installed (${core_pkgs[*]})..."
+    set_gui_progress 0.10 "Core System" "Ensuring core system packages are installed..."
     run_install "${core_pkgs[@]}" || print_warning "Core installation had errors."
+fi
+
+if [ ${#gpu_pkgs[@]} -gt 0 ]; then
+    print_info "Installing GPU drivers..."
+    set_gui_progress 0.20 "Installing GPU Drivers" "Installing detected GPU drivers..."
+    run_install "${gpu_pkgs[@]}" || print_warning "GPU driver installation had errors."
 fi
 
 if [ ${#browser_pkg[@]} -gt 0 ]; then
@@ -1301,7 +1318,7 @@ if [[ " ${script_pkgs[*]} " =~ " vencord " ]]; then
     vencord_src="$SCRIPT_DIR/vencord"
     if [ ! -f "$vencord_src" ]; then
         vencord_src="/tmp/vencord"
-        curl -sL "https://raw.githubusercontent.com/Cryptorial0/CLASS/master/vencord" -o "$vencord_src" 2>/dev/null || true
+        curl -sL -H "Cache-Control: no-cache" "https://raw.githubusercontent.com/Cryptorial0/CLASS/master/vencord?$(date +%s)" -o "$vencord_src" 2>/dev/null || true
     fi
     if [ -f "$vencord_src" ]; then
         sudo cp "$vencord_src" /usr/local/bin/vencord
@@ -1321,7 +1338,7 @@ if [[ " ${script_pkgs[*]} " =~ " slssteam " ]]; then
     slssteam_src="$SCRIPT_DIR/slssteam"
     if [ ! -f "$slssteam_src" ]; then
         slssteam_src="/tmp/slssteam"
-        curl -sL "https://raw.githubusercontent.com/Cryptorial0/CLASS/master/slssteam" -o "$slssteam_src" 2>/dev/null || true
+        curl -sL -H "Cache-Control: no-cache" "https://raw.githubusercontent.com/Cryptorial0/CLASS/master/slssteam?$(date +%s)" -o "$slssteam_src" 2>/dev/null || true
     fi
     if [ -f "$slssteam_src" ]; then
         sudo cp "$slssteam_src" /usr/local/bin/slssteam
@@ -1341,7 +1358,7 @@ if [[ " ${script_pkgs[*]} " =~ " fix-ntfs " ]]; then
     fixntfs_src="$SCRIPT_DIR/fix-ntfs"
     if [ ! -f "$fixntfs_src" ]; then
         fixntfs_src="/tmp/fix-ntfs"
-        curl -sL "https://raw.githubusercontent.com/Cryptorial0/CLASS/master/fix-ntfs" -o "$fixntfs_src" 2>/dev/null || true
+        curl -sL -H "Cache-Control: no-cache" "https://raw.githubusercontent.com/Cryptorial0/CLASS/master/fix-ntfs?$(date +%s)" -o "$fixntfs_src" 2>/dev/null || true
     fi
     if [ -f "$fixntfs_src" ]; then
         sudo cp "$fixntfs_src" /usr/local/bin/fix-ntfs
