@@ -244,14 +244,34 @@ if ! grep -q "\[chaotic-aur\]" /etc/pacman.conf; then
     sudo pacman-key --recv-key 3056513887B78AEB --keyserver keyserver.ubuntu.com
     sudo pacman-key --lsign-key 3056513887B78AEB
     print_info "Installing keyring and mirrorlist..."
-    sudo pacman -U --noconfirm 'https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-keyring.pkg.tar.zst' 'https://cdn-mirror.chaotic.cx/chaotic-mirrorlist.pkg.tar.zst'
-    print_info "Adding chaotic-aur to /etc/pacman.conf..."
-    sudo bash -c 'cat >> /etc/pacman.conf <<EOF
+
+    chaotic_mirrors=(
+        "https://geo-mirror.chaotic.cx/chaotic-aur"
+        "https://cdn-mirror.chaotic.cx/chaotic-aur"
+        "https://builds.garudalinux.org/repos/chaotic-aur"
+    )
+    chaotic_installed=0
+    for mirror in "${chaotic_mirrors[@]}"; do
+        print_info "Attempting retrieval from $mirror..."
+        if sudo pacman -U --noconfirm "$mirror/chaotic-keyring.pkg.tar.zst" "$mirror/chaotic-mirrorlist.pkg.tar.zst"; then
+            chaotic_installed=1
+            break
+        else
+            print_warning "Failed retrieving from $mirror, trying next mirror..."
+        fi
+    done
+
+    if [ "$chaotic_installed" -eq 1 ] && [ -f /etc/pacman.d/chaotic-mirrorlist ]; then
+        print_info "Adding chaotic-aur to /etc/pacman.conf..."
+        sudo bash -c 'cat >> /etc/pacman.conf <<EOF
 
 [chaotic-aur]
 Include = /etc/pacman.d/chaotic-mirrorlist
 EOF'
-    print_success "[chaotic-aur] repository added successfully."
+        print_success "[chaotic-aur] repository added successfully."
+    else
+        print_error "Failed to install chaotic-aur keyring or mirrorlist across all mirrors. Skipping repository enablement."
+    fi
 else
     print_info "[chaotic-aur] repository is already active."
 fi
